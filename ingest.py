@@ -151,7 +151,7 @@ class Api:
 
 def main():
     create_natl_grid_auction_results_table_if_not_exists()
-    api = Api(5)
+    api = Api(10)
     api.read_and_write_daily_auction_records()
 
 

@@ -11,3 +11,10 @@ python ./ingest.py
 
 #### Data
 This uses SQLite as the DB. https://www.sqlite.org/index.html
+
+You can query SQLite a number of ways, here's an example:
+```commandline
+sqlite3 habitat.db <<EOF
+SELECT * FROM natl_grid_auction_results;
+EOF
+```
