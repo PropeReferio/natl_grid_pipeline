@@ -1,13 +1,13 @@
+import sqlite3
 import time
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from typing import List
 
 import requests
-import sqlite3
-from typing import List, Optional
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
-from tenacity import retry, wait_exponential, stop_after_attempt
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from db import create_natl_grid_auction_results_table_if_not_exists, DB_NAME
+from db import DB_NAME, create_natl_grid_auction_results_table_if_not_exists
 
 utc_today = datetime.utcnow()
 RESOURCE_ID = "a63ab354-7e68-44c2-ad96-c6f920c30e85"
