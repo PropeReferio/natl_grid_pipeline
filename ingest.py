@@ -1,3 +1,5 @@
+import time
+
 import requests
 import sqlite3
 from typing import List, Optional
@@ -47,10 +49,30 @@ class AuctionRecord:
         )
 
 
+@retry(
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    stop=stop_after_attempt(5)
+)
+def get_total_count_of_records() -> int:
+    url_param_sql_count = [
+        f"?sql=select count(*) from \"{RESOURCE_ID}\" ",
+        f"WHERE \"registeredAuctionParticipant\" = '{AUCTION_PARTICIPANT}' ",
+        f"AND \"deliveryStart\" >= '{utc_today.date()}' ",
+        f"AND \"deliveryStart\" < '{(utc_today + timedelta(days=1)).date()}'"
+    ]
+    response = requests.get(BASE_URL + ''.join(url_param_sql_count))
+    resp_json = response.json()
+    return int(resp_json["result"]["records"][0]["count"])
+
+
 class Api:
 
-    def __init__(self):
+    def __init__(self, page_length=100):
         create_natl_grid_auction_results_table_if_not_exists()
+        self.total_records_available: int = get_total_count_of_records()
+        self.records_ingested: int = 0
+        self.pages_ingested: int = 0
+        self.page_length = page_length
 
     @retry(
         wait=wait_exponential(multiplier=1, min=4, max=10),
@@ -63,7 +85,10 @@ class Api:
         :return: A list of AuctionRecords, to be written to the DB.
         """
         records = []
-        response = requests.get(BASE_URL + ''.join(URL_PARAM_SQL))
+        response = requests.get(
+            f"{BASE_URL}{''.join(URL_PARAM_SQL)} "
+            f"LIMIT {self.page_length} OFFSET {self.pages_ingested * self.page_length}"
+        )
         resp_json = response.json()
         for record in resp_json["result"]["records"]:
             records.append(
@@ -86,17 +111,16 @@ class Api:
 
         return records
 
-    # @retry(
-    #     wait=wait_exponential(multiplier=1, min=4, max=10),
-    #     stop=stop_after_attempt(5)
-    # )
+    @retry(
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        stop=stop_after_attempt(5)
+    )
     def write_records_to_database(self, records: List[AuctionRecord]):
         """
         Write a page of records to the Database.
         """
         with sqlite3.connect(DB_NAME) as conn:
             cursor = conn.cursor()
-            # for record in records:
             cursor.executemany(
                 """
                 INSERT INTO natl_grid_auction_results 
@@ -110,17 +134,21 @@ class Api:
             )
 
             conn.commit()
-        # customer_data = [('John Doe', 'john.doe@email.com'), ('Jane Smith', 'jane.smith@email.com')]
-        # cursor.executemany("INSERT INTO customers (name, email) VALUES (?, ?)", customer_data)
 
     def read_and_write_records(self):
-        records = self.list_daily_auction_results_from_page()
-        self.write_records_to_database(records)
+        while self.total_records_available > self.records_ingested:
+            if self.records_ingested > 0:
+                print("Writing the next page.")
+            records = self.list_daily_auction_results_from_page()
+            self.write_records_to_database(records)
+            self.records_ingested += len(records)
+            # Docs say to request max once per second
+            time.sleep(2)
 
 
 def main():
     create_natl_grid_auction_results_table_if_not_exists()
-    api = Api()
+    api = Api(5)
     api.read_and_write_records()
 
 
