@@ -19,8 +19,6 @@ URL_PARAM_SQL = [
     f"AND \"deliveryStart\" >= '{utc_today.date()}' ",
     f"AND \"deliveryStart\" < '{(utc_today + timedelta(days=1)).date()}'"
 ]
-# https://api.nationalgrideso.com/api/3/action/datastore_search_sql?sql=select%20*%20from%20%22a63ab354-7e68-44c2-ad96-c6f920c30e85%22%20WHERE%20%22registeredAuctionParticipant%22%20=%20%27HABITAT%20ENERGY%20LIMITED%27%20LIMIT%20500
-# 14k records with no limit.
 
 
 @dataclass
@@ -71,7 +69,6 @@ class Api:
         create_natl_grid_auction_results_table_if_not_exists()
         self.total_records_available: int = get_total_count_of_records()
         self.records_ingested: int = 0
-        self.pages_ingested: int = 0
         self.page_length = page_length
 
     @retry(
@@ -87,7 +84,7 @@ class Api:
         records = []
         response = requests.get(
             f"{BASE_URL}{''.join(URL_PARAM_SQL)} "
-            f"LIMIT {self.page_length} OFFSET {self.pages_ingested * self.page_length}"
+            f"LIMIT {self.page_length} OFFSET {self.records_ingested}"
         )
         resp_json = response.json()
         for record in resp_json["result"]["records"]:
@@ -115,7 +112,7 @@ class Api:
         wait=wait_exponential(multiplier=1, min=4, max=10),
         stop=stop_after_attempt(5)
     )
-    def write_records_to_database(self, records: List[AuctionRecord]):
+    def write_daily_auction_records_to_database(self, records: List[AuctionRecord]):
         """
         Write a page of records to the Database.
         """
@@ -135,21 +132,27 @@ class Api:
 
             conn.commit()
 
-    def read_and_write_records(self):
+    def read_and_write_daily_auction_records(self):
         while self.total_records_available > self.records_ingested:
             if self.records_ingested > 0:
-                print("Writing the next page.")
+                print(f"Writing the next page: OFFSET {self.records_ingested}")
             records = self.list_daily_auction_results_from_page()
-            self.write_records_to_database(records)
+            self.write_daily_auction_records_to_database(records)
             self.records_ingested += len(records)
             # Docs say to request max once per second
             time.sleep(2)
+
+    def placeholder_method_for_new_endpoint(self):
+        """
+        Other endpoints could be added to other methods...
+        """
+        pass
 
 
 def main():
     create_natl_grid_auction_results_table_if_not_exists()
     api = Api(5)
-    api.read_and_write_records()
+    api.read_and_write_daily_auction_records()
 
 
 if __name__ == "__main__":
